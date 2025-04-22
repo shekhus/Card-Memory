@@ -7,6 +7,7 @@ import backgroundMusic from "../assets/audio/background-music.mp3";
 import buttonHoverSound from "../assets/audio/button-hover.mp3";
 import buttonClickSound from "../assets/audio/button-click.mp3";
 import { X } from "lucide-react";
+import { connectWallet, setupAccountChangedListener, isMetaMaskInstalled } from "../utils/wallet";
 import "./Play.css";
 
 const modalStyles = {
@@ -69,7 +70,10 @@ const Play = () => {
   const [PlaymodalIsOpen, setModalPlayIsOpen] = useState(false);
   const [difficulty, setDifficulty] = useState(null);
   const [isCalmMode, setIsCalmMode] = useState(false);
-  
+  const [walletAddress, setWalletAddress] = useState(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [walletError, setWalletError] = useState(null);
+
   const [bgVolume, setBgVolume] = useState(
     localStorage.getItem("bgVolume") !== null ? parseInt(localStorage.getItem("bgVolume"), 10) : 50
   );
@@ -118,6 +122,15 @@ const Play = () => {
     clickAudioRef.current.volume = sfxVolume / 100;
     localStorage.setItem("sfxVolume", sfxVolume);
   }, [sfxVolume]);
+
+  useEffect(() => {
+    // Setup listener for account changes
+    if (window.ethereum) {
+      setupAccountChangedListener((accountInfo) => {
+        setWalletAddress(accountInfo);
+      });
+    }
+  }, []);
 
   const handleBgVolumeChange = (event) => {
     const newVolume = parseInt(event.target.value, 10);
@@ -206,6 +219,27 @@ const Play = () => {
     }
   };
 
+  const handleConnectWallet = async () => {
+    playClickSound();
+
+    if (!isMetaMaskInstalled()) {
+      setWalletError("MetaMask is not installed. Please install MetaMask to continue.");
+      return;
+    }
+
+    try {
+      setIsConnecting(true);
+      setWalletError(null);
+      const accountInfo = await connectWallet();
+      setWalletAddress(accountInfo);
+    } catch (error) {
+      setWalletError(error.message || "Failed to connect wallet");
+      console.error("Wallet connection error:", error);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
   return (
     <div
       className="background-container"
@@ -213,6 +247,20 @@ const Play = () => {
         backgroundImage: `url(${isCalmMode ? calmBackground : backgroundGif})`,
       }}
     >
+      <button
+        className={`game-button wallet-button ${isCalmMode ? "calm-button" : ""}`}
+        onClick={handleConnectWallet}
+        onMouseEnter={playHoverSound}
+        disabled={isConnecting}
+      >
+        {isConnecting
+          ? "Connecting..."
+          : walletAddress
+            ? walletAddress.shortAddress
+            : "Connect Wallet"}
+      </button>
+      {walletError && <div className="wallet-error">{walletError}</div>}
+
       <h1 className={`game-title ${isCalmMode ? "calm-title" : ""}`}>
         WonderCards
       </h1>
