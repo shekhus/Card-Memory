@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Modal from "react-modal";
 import backgroundGif from "../assets/images/play.gif";
@@ -8,6 +8,7 @@ import buttonHoverSound from "../assets/audio/button-hover.mp3";
 import buttonClickSound from "../assets/audio/button-click.mp3";
 import { X } from "lucide-react";
 import { connectWallet, setupAccountChangedListener, isMetaMaskInstalled } from "../utils/wallet";
+import { runInteractionDemo } from "../scripts/interactWithContract";
 import "./Play.css";
 
 const modalStyles = {
@@ -69,10 +70,14 @@ const Play = () => {
   const [SettingsmodalIsOpen, setModalSettingIsOpen] = useState(false);
   const [PlaymodalIsOpen, setModalPlayIsOpen] = useState(false);
   const [difficulty, setDifficulty] = useState(null);
-  const [isCalmMode, setIsCalmMode] = useState(false);
+  const [isCalmMode] = useState(false);
   const [walletAddress, setWalletAddress] = useState(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [walletError, setWalletError] = useState(null);
+  const [blockchainDemo, setBlockchainDemo] = useState(false);
+  const [demoInProgress, setDemoInProgress] = useState(false);
+  const [demoGameId, setDemoGameId] = useState(null);
+  const [demoError, setDemoError] = useState(null);
 
   const [bgVolume, setBgVolume] = useState(
     localStorage.getItem("bgVolume") !== null ? parseInt(localStorage.getItem("bgVolume"), 10) : 50
@@ -142,11 +147,6 @@ const Play = () => {
     const newVolume = parseInt(event.target.value, 10);
     setSfxVolume(newVolume);
     setMutedSfx(newVolume === 0);
-  };
-
-  const toggleCalmMode = () => {
-    setIsCalmMode((prev) => !prev);
-    playClickSound();
   };
 
   const playHoverSound = () => {
@@ -237,6 +237,25 @@ const Play = () => {
       console.error("Wallet connection error:", error);
     } finally {
       setIsConnecting(false);
+    }
+  };
+
+  const handleBlockchainDemo = async () => {
+    if (demoInProgress) return;
+    
+    setBlockchainDemo(true);
+    setDemoInProgress(true);
+    setDemoError(null);
+    
+    try {
+      const gameId = await runInteractionDemo();
+      setDemoGameId(gameId ? gameId.toString() : null);
+      console.log('Blockchain demo completed successfully with game ID:', gameId);
+    } catch (error) {
+      console.error('Blockchain demo failed:', error);
+      setDemoError(error.message || 'Demo failed. Check console for details.');
+    } finally {
+      setDemoInProgress(false);
     }
   };
 
@@ -442,6 +461,51 @@ const Play = () => {
           </button>
         </div>
       </Modal>
+
+      {/* New Blockchain Demo button */}
+      <button 
+        className="blockchain-demo-btn" 
+        onClick={handleBlockchainDemo}
+        disabled={demoInProgress || !walletAddress}
+        style={{
+          marginTop: '20px',
+          padding: '10px 20px',
+          backgroundColor: demoInProgress ? '#555' : '#2c2c54',
+          color: '#fff',
+          border: '2px solid #00d9ff',
+          borderRadius: '8px',
+          cursor: demoInProgress ? 'not-allowed' : 'pointer',
+          boxShadow: '0 4px 8px rgba(0, 0, 0, 0.3)',
+          transition: 'all 0.3s ease'
+        }}
+      >
+        {demoInProgress ? "Demo Running..." : "Blockchain Demo"}
+      </button>
+
+      {blockchainDemo && (
+        <div 
+          className="demo-result"
+          style={{
+            marginTop: '10px',
+            padding: '10px',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            color: '#fff',
+            borderRadius: '5px',
+            maxWidth: '80%',
+            textAlign: 'center'
+          }}
+        >
+          {demoInProgress ? (
+            <p>Running blockchain demo... Check console for transaction details.</p>
+          ) : demoError ? (
+            <p style={{color: '#ff6b6b'}}>Error: {demoError}</p>
+          ) : demoGameId ? (
+            <p>Demo successful! Game ID: {demoGameId}</p>
+          ) : (
+            <p>Demo completed. No game ID returned.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 };

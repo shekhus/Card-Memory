@@ -8,6 +8,14 @@ import background from "../assets/images/mode1.gif";
 import bgMusic from "../assets/audio/memory-bg.mp3";
 import axios from "axios";
 import { shuffleArray, cardStateHelpers } from "./CardUtils";
+// Import blockchain functions
+import { 
+  startNewGame, 
+  recordMoveOnChain, 
+  completeGameOnChain, 
+  validateMatchOnChain,
+  getConnectedAddress 
+} from "../utils/web3";
 
 const defaultDifficulty = "Easy";
 
@@ -254,18 +262,46 @@ const  MemoryEasy = () => {
   const audioRef = useRef(null);
   const [audioIndex, setAudioIndex] = useState(0);
   const [openModal, setOpenModal] = useState(false);
+  const [gameId, setGameId] = useState(null);
+  const [walletConnected, setWalletConnected] = useState(false);
+  const [walletAddress, setWalletAddress] = useState('');
+  const [transactionInProgress, setTransactionInProgress] = useState(false);
 
   const userID = localStorage.getItem("userID");
   
-  // Move hooks before any conditionals to avoid React Hook errors
+  // Check if MetaMask is installed and if we're on mobile
+  useEffect(() => {
+    const checkEnvironment = async () => {
+      // Check if we're on mobile (keeping the check for possible future use)
+      // const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      // setIsMobile(isMobileDevice);
+      
+      // Check for MetaMask/wallet
+      if (window.ethereum) {
+        try {
+          const address = await getConnectedAddress();
+          setWalletAddress(address);
+          setWalletConnected(true);
+          console.log('Wallet connected:', address);
+        } catch (error) {
+          console.error('Wallet connection error:', error);
+          setWalletConnected(false);
+        }
+      }
+    };
+    
+    checkEnvironment();
+  }, []);
+
   // Memoize the shuffled cards to avoid unnecessary re-renders
   const shuffleCards = useCallback(() => {
     return shuffleArray(cardImages);
   }, []);
 
-  const handleSaveNewGame = useCallback(() => {
+  const handleSaveNewGame = useCallback(async () => {
     if (!userID) return;
-    
+
+    // Legacy approach - save to backend
     saveGameData({
       userID,
       gameDate: new Date(),
@@ -274,7 +310,22 @@ const  MemoryEasy = () => {
       completed: 0,
       timeTaken: timer,
     });
-  }, [failedAttempts, timer, userID]);
+    
+    // Blockchain approach - start a new game on chain
+    if (walletConnected && !transactionInProgress) {
+      try {
+        setTransactionInProgress(true);
+        console.log('Starting new game on blockchain...');
+        const newGameId = await startNewGame(0); // 0 = Easy difficulty
+        setGameId(newGameId);
+        console.log('New game started on blockchain with ID:', newGameId);
+      } catch (error) {
+        console.error('Error starting new game on blockchain:', error);
+      } finally {
+        setTransactionInProgress(false);
+      }
+    }
+  }, [failedAttempts, timer, userID, walletConnected, transactionInProgress]);
 
   const handleNewGame = useCallback(() => {
     setCards(shuffleCards());
@@ -340,8 +391,34 @@ const  MemoryEasy = () => {
       const [card1, card2] = flippedCards;
       
       // Use a single timeout for better performance
-      const timeoutId = setTimeout(() => {
-        if (card1.image === card2.image) {
+      const timeoutId = setTimeout(async () => {
+        const isMatched = card1.image === card2.image;
+        
+        // If we have a valid gameId and wallet connection, record move on blockchain
+        if (gameId && walletConnected && !transactionInProgress) {
+          try {
+            setTransactionInProgress(true);
+            console.log('Recording move on blockchain...');
+            // Validate match on chain
+            const isValidMatch = await validateMatchOnChain(
+              card1.id, 
+              card2.id, 
+              card1.image, 
+              card2.image
+            );
+            console.log('Move validated on chain:', isValidMatch);
+            
+            // Record the move
+            await recordMoveOnChain(gameId, isMatched);
+            console.log('Move recorded on blockchain');
+          } catch (error) {
+            console.error('Error recording move on blockchain:', error);
+          } finally {
+            setTransactionInProgress(false);
+          }
+        }
+        
+        if (isMatched) {
           // Update matched cards
           setMatchedCards((prev) => [...prev, card1.id, card2.id]);
           
@@ -363,7 +440,7 @@ const  MemoryEasy = () => {
       // Cleanup timeout on component unmount or when dependencies change
       return () => clearTimeout(timeoutId);
     }
-  }, [flippedCards, audioIndex, sfxVolume]);
+  }, [flippedCards, audioIndex, sfxVolume, gameId, walletConnected, transactionInProgress]);
 
   useEffect(() => {
     if (matchedCards.length === cards.length && cards.length > 0) {
@@ -378,6 +455,7 @@ const  MemoryEasy = () => {
         // Ensure the game data is saved only once
         const saveData = async () => {
             try {
+                // Legacy save to backend
                 await saveGameData({
                     userID,
                     gameDate: new Date(),
@@ -386,6 +464,21 @@ const  MemoryEasy = () => {
                     completed: 1,
                     timeTaken: timer,
                 });
+                
+                // Blockchain save - complete game on chain
+                if (gameId && walletConnected && !transactionInProgress) {
+                  try {
+                    setTransactionInProgress(true);
+                    console.log('Completing game on blockchain...');
+                    await completeGameOnChain(gameId, timer);
+                    console.log('Game completed on blockchain');
+                  } catch (error) {
+                    console.error('Error completing game on blockchain:', error);
+                  } finally {
+                    setTransactionInProgress(false);
+                  }
+                }
+                
                 localStorage.setItem("gameCompleted", "true");
                 setTimeout(() => navigate("/congt-easy"), 1000);
             } catch (error) {
@@ -395,7 +488,7 @@ const  MemoryEasy = () => {
 
         saveData();
     }
-}, [matchedCards, cards.length, navigate, sfxVolume, failedAttempts, timer]);
+  }, [matchedCards, cards.length, navigate, sfxVolume, failedAttempts, timer, gameId, walletConnected, transactionInProgress]);
 
   // Optimized card click handler using the utility functions
   const handleCardClick = useCallback((card) => {
@@ -424,6 +517,33 @@ const  MemoryEasy = () => {
     </Grid>
   ), [cards, handleCardClick, initialReveal, flippedCards, matchedCards]);
 
+  // Add wallet connection status and game ID display
+  const blockchainStatus = useMemo(() => (
+    <Box
+      sx={{
+        position: "absolute",
+        top: "10px",
+        right: "10px",
+        backgroundColor: walletConnected ? "rgba(0, 200, 0, 0.7)" : "rgba(200, 0, 0, 0.7)",
+        color: "#fff",
+        padding: "10px",
+        borderRadius: "5px",
+        fontSize: "12px",
+        fontFamily: '"Press Start 2P", cursive',
+      }}
+    >
+      {walletConnected ? (
+        <>
+          <div>Wallet: {walletAddress.substring(0, 6)}...{walletAddress.substring(walletAddress.length - 4)}</div>
+          {gameId && <div>Game ID: {gameId.toString()}</div>}
+          {transactionInProgress && <div>Processing transaction...</div>}
+        </>
+      ) : (
+        <div>{window.ethereum ? 'Wallet not connected' : 'No wallet detected'}</div>
+      )}
+    </Box>
+  ), [walletConnected, walletAddress, gameId, transactionInProgress]);
+
   if (!userID) {
     console.error("Error: userID is missing.");
     return <div>Please log in to play the game.</div>;
@@ -438,11 +558,20 @@ const  MemoryEasy = () => {
       <PixelTimerBox>Timer: {timer}s</PixelTimerBox>
       <PixelBox>Learning Moments: {failedAttempts}</PixelBox>
       
+      {blockchainStatus}
+      
       {cardGrid} {/* Use the memoized grid */}
       
       <Box sx={{ mt: 2, textAlign: "center" }}>
-        <PixelButton onClick={() => { handleSaveNewGame(); handleNewGame(); }} sx={{ mt: 2}}>
-          New Game
+        <PixelButton 
+          onClick={() => { 
+            handleSaveNewGame(); 
+            handleNewGame(); 
+          }} 
+          sx={{ mt: 2}}
+          disabled={transactionInProgress}
+        >
+          {transactionInProgress ? 'Processing...' : 'New Game'}
         </PixelButton>
       </Box>
 
