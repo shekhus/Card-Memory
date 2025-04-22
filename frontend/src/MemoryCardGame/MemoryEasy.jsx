@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Box, Grid, Button, Modal, Typography } from "@mui/material";
 import { styled } from "@mui/system";
@@ -7,9 +7,7 @@ import { useSpring, animated } from "@react-spring/web";
 import background from "../assets/images/mode1.gif";
 import bgMusic from "../assets/audio/memory-bg.mp3";
 import axios from "axios";
-
-
-
+import { shuffleArray, cardStateHelpers } from "./CardUtils";
 
 const defaultDifficulty = "Easy";
 
@@ -29,15 +27,6 @@ const matchAudioFiles = [
 
 const congratsAudio = "/audio/congrats.mp3"; // Final congratulations audio
 
-// Shuffle Logic
-const shuffleArray = (array) => {
-  const shuffledArray = [...array];
-  for (let i = shuffledArray.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffledArray[i], shuffledArray[j]] = [shuffledArray[j], shuffledArray[i]];
-  }
-  return shuffledArray;
-};
 const saveGameData = async (gameData) => {
   try {
     const response = await axios.post("http://localhost:5005/api/memory/save", gameData, {
@@ -51,7 +40,7 @@ const saveGameData = async (gameData) => {
 };
 
 // Styled Components
-const StyledGameContainer = styled(Box)(({ theme, mouseDisabled }) => ({
+const StyledGameContainer = styled(Box)(({ mouseDisabled }) => ({
   minHeight: "100vh",
   width: "100vw",
   display: "flex",
@@ -64,10 +53,9 @@ const StyledGameContainer = styled(Box)(({ theme, mouseDisabled }) => ({
   backgroundRepeat: "no-repeat",
   position: "relative",
   pointerEvents: mouseDisabled ? "none" : "auto",
-
 }));
 
-const PixelButton = styled(Box)(({ theme }) => ({
+const PixelButton = styled(Box)(() => ({
   display: "inline-block",
   backgroundColor: "#2c2c54",
   color: "#fff",
@@ -91,7 +79,7 @@ const PixelButton = styled(Box)(({ theme }) => ({
   },
 }));
 
-const PixelBox = styled(Box)(({ theme }) => ({
+const PixelBox = styled(Box)(() => ({
   position: "absolute",
   bottom: "10%",
   left: "1%",
@@ -107,7 +95,7 @@ const PixelBox = styled(Box)(({ theme }) => ({
   marginBottom: "10px",
 }));
 
-const PixelTimerBox = styled(Box)(({ theme }) => ({
+const PixelTimerBox = styled(Box)(() => ({
   position: "absolute",
   bottom: "5%",
   left: "1%",
@@ -185,7 +173,7 @@ const modalStyle = {
   borderRadius: '10px', // Pixel rounded corners
 };
 
-const PixelTypography = styled(Typography)(({ theme }) => ({
+const PixelTypography = styled(Typography)(() => ({
   fontFamily: '"Press Start 2P", cursive', // Pixelated font style
   fontSize: '24px',
   color: '#fff',  // White text to stand out on the background
@@ -197,7 +185,7 @@ const PixelTypography = styled(Typography)(({ theme }) => ({
     -1px 1px 0 #ff4500`,  // Pixelated text shadow
 }));
 
-const PixelButtonModal = styled(Button)(({ theme }) => ({
+const PixelButtonModal = styled(Button)(() => ({
   backgroundColor: "#2c2c54",
   color: "#fff",
   fontFamily: '"Press Start 2P", cursive', // Pixelated font style
@@ -267,23 +255,29 @@ const  MemoryEasy = () => {
   const [audioIndex, setAudioIndex] = useState(0);
   const [openModal, setOpenModal] = useState(false);
 
+  const userID = localStorage.getItem("userID");
+  
+  // Move hooks before any conditionals to avoid React Hook errors
+  // Memoize the shuffled cards to avoid unnecessary re-renders
+  const shuffleCards = useCallback(() => {
+    return shuffleArray(cardImages);
+  }, []);
 
-
-  const handleSaveNewGame = () => {
+  const handleSaveNewGame = useCallback(() => {
+    if (!userID) return;
+    
     saveGameData({
-        userID,
-        gameDate: new Date(),
-        failed: failedAttempts,
-        difficulty: defaultDifficulty,
-        completed: 0,
-        timeTaken: timer,
+      userID,
+      gameDate: new Date(),
+      failed: failedAttempts,
+      difficulty: defaultDifficulty,
+      completed: 0,
+      timeTaken: timer,
     });
-};
+  }, [failedAttempts, timer, userID]);
 
-  const handleNewGame = () => {
-
-
-    setCards(shuffleArray(cardImages));
+  const handleNewGame = useCallback(() => {
+    setCards(shuffleCards());
     setMatchedCards([]);
     setFlippedCards([]);
     setFailedAttempts(0);
@@ -292,20 +286,18 @@ const  MemoryEasy = () => {
     setInitialReveal(true);
     setAudioIndex(0); // Reset audio index
 
-
     const mouseDisableDuration = 2000;
     setMouseDisabled(true);
     setTimeout(() => {
       setMouseDisabled(false);  // Re-enable mouse events after mouseDisableDuration
     }, mouseDisableDuration);
 
-
     setTimeout(() => {
       setInitialReveal(false);
       setTimerActive(true);
-
     }, 1500);
-  };
+  }, [shuffleCards]);
+
   const handleBackButton = () => {
     setOpenModal(true); // Show the confirmation modal
   };
@@ -319,7 +311,6 @@ const  MemoryEasy = () => {
   const handleModalNo = () => {
     setOpenModal(false); // Close the modal and resume game
   };
-
 
   useEffect(() => {
     handleNewGame();
@@ -343,27 +334,36 @@ const  MemoryEasy = () => {
     return () => clearInterval(interval);
   }, [timerActive]);
 
+  // Optimized useEffect for checking matched cards
   useEffect(() => {
     if (flippedCards.length === 2) {
       const [card1, card2] = flippedCards;
-      setTimeout(() => {
+      
+      // Use a single timeout for better performance
+      const timeoutId = setTimeout(() => {
         if (card1.image === card2.image) {
+          // Update matched cards
           setMatchedCards((prev) => [...prev, card1.id, card2.id]);
+          
+          // Play audio if available
           if (audioIndex < matchAudioFiles.length) {
-            // Play the next audio in order
             const nextAudio = new Audio(matchAudioFiles[audioIndex]);
-            nextAudio.volume = sfxVolume / 100; // Set the volume for sound effects
-            nextAudio.play();
-            setAudioIndex(audioIndex + 1); // Move to the next audio
+            nextAudio.volume = sfxVolume / 100;
+            nextAudio.play().catch(error => console.error("Audio play error:", error));
+            setAudioIndex(audioIndex + 1);
           }
         } else {
           setFailedAttempts((prev) => prev + 1);
         }
+        
+        // Clear flipped cards
         setFlippedCards([]);
       }, 1000);
+      
+      // Cleanup timeout on component unmount or when dependencies change
+      return () => clearTimeout(timeoutId);
     }
   }, [flippedCards, audioIndex, sfxVolume]);
-
 
   useEffect(() => {
     if (matchedCards.length === cards.length && cards.length > 0) {
@@ -397,18 +397,37 @@ const  MemoryEasy = () => {
     }
 }, [matchedCards, cards.length, navigate, sfxVolume, failedAttempts, timer]);
 
+  // Optimized card click handler using the utility functions
+  const handleCardClick = useCallback((card) => {
+    setFlippedCards(currentFlipped => 
+      cardStateHelpers.addFlippedCard(card, currentFlipped, matchedCards)
+    );
+  }, [matchedCards]);
 
-  const userID = localStorage.getItem("userID"); // ✅ Fetch from local storage or auth context
+  // Memoize the grid component to avoid unnecessary re-renders
+  const cardGrid = useMemo(() => (
+    <Grid container spacing={6} justifyContent="center" sx={{ maxWidth: 600, marginTop: "-80px" }}>
+      {cards.map((card) => (
+        <Grid item xs={6} key={card.id}>
+          <Card
+            card={card}
+            handleClick={() => handleCardClick(card)}
+            flipped={
+              initialReveal ||
+              flippedCards.some((c) => c.id === card.id) ||
+              matchedCards.includes(card.id)
+            }
+            matched={matchedCards.includes(card.id)}
+          />
+        </Grid>
+      ))}
+    </Grid>
+  ), [cards, handleCardClick, initialReveal, flippedCards, matchedCards]);
+
   if (!userID) {
     console.error("Error: userID is missing.");
-    return;
+    return <div>Please log in to play the game.</div>;
   }
-
-  const handleCardClick = (card) => {
-    if (!matchedCards.includes(card.id) && flippedCards.length < 2 && !flippedCards.some((c) => c.id === card.id)) {
-      setFlippedCards((prev) => [...prev, card]);
-    }
-  };
 
   return (
     <StyledGameContainer mouseDisabled={mouseDisabled}>
@@ -418,29 +437,14 @@ const  MemoryEasy = () => {
       </PixelButton>
       <PixelTimerBox>Timer: {timer}s</PixelTimerBox>
       <PixelBox>Learning Moments: {failedAttempts}</PixelBox>
-      <Grid container spacing={6} justifyContent="center" sx={{ maxWidth: 600, marginTop: "-80px" }}>
-  {cards.map((card) => (
-    <Grid item xs={6} key={card.id}> {/* Changed from xs={3} to xs={6} for 2 cards per row */}
-      <Card
-        card={card}
-        handleClick={() => handleCardClick(card)}
-        flipped={
-          initialReveal ||
-          flippedCards.some((c) => c.id === card.id) ||
-          matchedCards.includes(card.id)
-        }
-        matched={matchedCards.includes(card.id)}
-      />
-    </Grid>
-  ))}
-</Grid>
+      
+      {cardGrid} {/* Use the memoized grid */}
+      
       <Box sx={{ mt: 2, textAlign: "center" }}>
-
         <PixelButton onClick={() => { handleSaveNewGame(); handleNewGame(); }} sx={{ mt: 2}}>
           New Game
         </PixelButton>
       </Box>
-
 
       <Modal open={openModal} onClose={handleModalNo}>
   <Box sx={modalStyle}>
@@ -460,7 +464,5 @@ const  MemoryEasy = () => {
     </StyledGameContainer>
   );
 };
-
-
 
 export default MemoryEasy;
