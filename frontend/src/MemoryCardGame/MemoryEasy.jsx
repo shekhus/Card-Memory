@@ -40,7 +40,7 @@ const shuffleArray = (array) => {
 };
 const saveGameData = async (gameData) => {
   try {
-    const response = await axios.post("http://localhost:5000/api/memory/save", gameData, {
+    const response = await axios.post("http://localhost:5005/api/memory/save", gameData, {
       headers: { "Content-Type": "application/json" },
     });
 
@@ -63,7 +63,7 @@ const StyledGameContainer = styled(Box)(({ theme, mouseDisabled }) => ({
   backgroundPosition: "center",
   backgroundRepeat: "no-repeat",
   position: "relative",
-  pointerEvents: mouseDisabled ? "none" : "auto", 
+  pointerEvents: mouseDisabled ? "none" : "auto",
 
 }));
 
@@ -191,9 +191,9 @@ const PixelTypography = styled(Typography)(({ theme }) => ({
   color: '#fff',  // White text to stand out on the background
   letterSpacing: '1px',
   textShadow: `
-    -1px -1px 0 #ff0000,  
-    1px -1px 0 #ff7f00, 
-    1px 1px 0 #ffd700, 
+    -1px -1px 0 #ff0000,
+    1px -1px 0 #ff7f00,
+    1px 1px 0 #ffd700,
     -1px 1px 0 #ff4500`,  // Pixelated text shadow
 }));
 
@@ -279,10 +279,10 @@ const  MemoryEasy = () => {
         timeTaken: timer,
     });
 };
-  
+
   const handleNewGame = () => {
-   
-    
+
+
     setCards(shuffleArray(cardImages));
     setMatchedCards([]);
     setFlippedCards([]);
@@ -292,18 +292,18 @@ const  MemoryEasy = () => {
     setInitialReveal(true);
     setAudioIndex(0); // Reset audio index
 
-    
+
     const mouseDisableDuration = 2000;
     setMouseDisabled(true);
     setTimeout(() => {
       setMouseDisabled(false);  // Re-enable mouse events after mouseDisableDuration
     }, mouseDisableDuration);
 
-  
+
     setTimeout(() => {
       setInitialReveal(false);
       setTimerActive(true);
-   
+
     }, 1500);
   };
   const handleBackButton = () => {
@@ -319,8 +319,8 @@ const  MemoryEasy = () => {
   const handleModalNo = () => {
     setOpenModal(false); // Close the modal and resume game
   };
-  
- 
+
+
   useEffect(() => {
     handleNewGame();
     const handleFirstClick = () => {
@@ -364,7 +364,7 @@ const  MemoryEasy = () => {
     }
   }, [flippedCards, audioIndex, sfxVolume]);
 
-  
+
   useEffect(() => {
     if (matchedCards.length === cards.length && cards.length > 0) {
         // Play the congratulations audio
@@ -383,7 +383,7 @@ const  MemoryEasy = () => {
                     gameDate: new Date(),
                     failed: failedAttempts,
                     difficulty: defaultDifficulty,
-                    completed: 1,  
+                    completed: 1,
                     timeTaken: timer,
                 });
                 localStorage.setItem("gameCompleted", "true");
@@ -435,7 +435,7 @@ const  MemoryEasy = () => {
   ))}
 </Grid>
       <Box sx={{ mt: 2, textAlign: "center" }}>
-     
+
         <PixelButton onClick={() => { handleSaveNewGame(); handleNewGame(); }} sx={{ mt: 2}}>
           New Game
         </PixelButton>
